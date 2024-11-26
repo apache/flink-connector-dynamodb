@@ -370,7 +370,7 @@ Connector Options
       <td>no</td>
       <td style="word-wrap: break-word;">LATEST</td>
       <td>String</td>
-      <td>Initial position to be used when reading from the table. See <a href="#start-reading-position">Start Reading Position</a> for details.</td>
+      <td>Initial position to be used when reading from the table.</td>
     </tr>
     <tr>
       <td><h5>source.init.timestamp</h5></td>
@@ -378,7 +378,7 @@ Connector Options
       <td>no</td>
       <td style="word-wrap: break-word;">(none)</td>
       <td>String</td>
-      <td>The initial timestamp to start reading Kinesis stream from (when <code>scan.stream.initpos</code> is AT_TIMESTAMP). See <a href="#start-reading-position">Start Reading Position</a> for details.</td>
+      <td>The initial timestamp to start reading Kinesis stream from (when <code>source.init.position</code> is AT_TIMESTAMP).</td>
     </tr>
     <tr>
       <td><h5>source.init.timestamp.format</h5></td>
@@ -386,7 +386,7 @@ Connector Options
       <td>no</td>
       <td style="word-wrap: break-word;">yyyy-MM-dd'T'HH:mm:ss.SSSXXX</td>
       <td>String</td>
-      <td>The date format of initial timestamp to start reading Kinesis stream from (when <code>scan.stream.initpos</code> is AT_TIMESTAMP). See <a href="#start-reading-position">Start Reading Position</a> for details.</td>
+      <td>The date format of initial timestamp to start reading Kinesis stream from (when <code>source.init.position</code> is AT_TIMESTAMP).</td>
     </tr>
     <tr>
       <td><h5>source.shard.discovery.interval</h5></td>
