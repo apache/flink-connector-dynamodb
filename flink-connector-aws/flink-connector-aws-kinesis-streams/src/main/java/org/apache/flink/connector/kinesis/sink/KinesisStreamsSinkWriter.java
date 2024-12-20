@@ -25,6 +25,7 @@ import org.apache.flink.connector.base.sink.throwable.FatalExceptionClassifier;
 import org.apache.flink.connector.base.sink.writer.AsyncSinkWriter;
 import org.apache.flink.connector.base.sink.writer.BufferedRequestState;
 import org.apache.flink.connector.base.sink.writer.ElementConverter;
+import org.apache.flink.connector.base.sink.writer.ResultHandler;
 import org.apache.flink.connector.base.sink.writer.config.AsyncSinkWriterConfiguration;
 import org.apache.flink.connector.base.sink.writer.strategy.AIMDScalingStrategy;
 import org.apache.flink.connector.base.sink.writer.strategy.CongestionControlRateLimitingStrategy;
@@ -48,7 +49,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
 
 import static org.apache.flink.connector.aws.util.AWSCredentialFatalExceptionClassifiers.getInvalidCredentialsExceptionClassifier;
 import static org.apache.flink.connector.aws.util.AWSCredentialFatalExceptionClassifiers.getSdkClientMisconfiguredExceptionClassifier;
@@ -199,7 +199,7 @@ class KinesisStreamsSinkWriter<InputT> extends AsyncSinkWriter<InputT, PutRecord
     @Override
     protected void submitRequestEntries(
             List<PutRecordsRequestEntry> requestEntries,
-            Consumer<List<PutRecordsRequestEntry>> requestResult) {
+            ResultHandler<PutRecordsRequestEntry> resultHandler) {
 
         PutRecordsRequest batchRequest =
                 PutRecordsRequest.builder()
@@ -213,11 +213,11 @@ class KinesisStreamsSinkWriter<InputT> extends AsyncSinkWriter<InputT, PutRecord
         future.whenComplete(
                 (response, err) -> {
                     if (err != null) {
-                        handleFullyFailedRequest(err, requestEntries, requestResult);
+                        handleFullyFailedRequest(err, requestEntries, resultHandler);
                     } else if (response.failedRecordCount() > 0) {
-                        handlePartiallyFailedRequest(response, requestEntries, requestResult);
+                        handlePartiallyFailedRequest(response, requestEntries, resultHandler);
                     } else {
-                        requestResult.accept(Collections.emptyList());
+                        resultHandler.complete();
                     }
                 });
     }
@@ -230,15 +230,15 @@ class KinesisStreamsSinkWriter<InputT> extends AsyncSinkWriter<InputT, PutRecord
     private void handleFullyFailedRequest(
             Throwable err,
             List<PutRecordsRequestEntry> requestEntries,
-            Consumer<List<PutRecordsRequestEntry>> requestResult) {
+            ResultHandler<PutRecordsRequestEntry> resultHandler) {
         LOG.warn(
                 "KDS Sink failed to write and will retry {} entries to KDS",
                 requestEntries.size(),
                 err);
         numRecordsOutErrorsCounter.inc(requestEntries.size());
 
-        if (isRetryable(err)) {
-            requestResult.accept(requestEntries);
+        if (isRetryable(err, resultHandler)) {
+            resultHandler.retryForEntries(requestEntries);
         }
     }
 
@@ -250,15 +250,15 @@ class KinesisStreamsSinkWriter<InputT> extends AsyncSinkWriter<InputT, PutRecord
     private void handlePartiallyFailedRequest(
             PutRecordsResponse response,
             List<PutRecordsRequestEntry> requestEntries,
-            Consumer<List<PutRecordsRequestEntry>> requestResult) {
+            ResultHandler<PutRecordsRequestEntry> resultHandler) {
         LOG.warn(
                 "KDS Sink failed to write and will retry {} entries to KDS",
                 response.failedRecordCount());
         numRecordsOutErrorsCounter.inc(response.failedRecordCount());
 
         if (failOnError) {
-            getFatalExceptionCons()
-                    .accept(new KinesisStreamsException.KinesisStreamsFailFastException());
+            resultHandler.completeExceptionally(
+                    new KinesisStreamsException.KinesisStreamsFailFastException());
             return;
         }
         List<PutRecordsRequestEntry> failedRequestEntries =
@@ -271,17 +271,19 @@ class KinesisStreamsSinkWriter<InputT> extends AsyncSinkWriter<InputT, PutRecord
             }
         }
 
-        requestResult.accept(failedRequestEntries);
+        resultHandler.retryForEntries(failedRequestEntries);
     }
 
-    private boolean isRetryable(Throwable err) {
+    private boolean isRetryable(
+            Throwable err, ResultHandler<PutRecordsRequestEntry> resultHandler) {
 
-        if (!KINESIS_FATAL_EXCEPTION_CLASSIFIER.isFatal(err, getFatalExceptionCons())) {
+        if (!KINESIS_FATAL_EXCEPTION_CLASSIFIER.isFatal(
+                err, resultHandler::completeExceptionally)) {
             return false;
         }
         if (failOnError) {
-            getFatalExceptionCons()
-                    .accept(new KinesisStreamsException.KinesisStreamsFailFastException(err));
+            resultHandler.completeExceptionally(
+                    new KinesisStreamsException.KinesisStreamsFailFastException(err));
             return false;
         }
 

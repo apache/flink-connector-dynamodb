@@ -25,6 +25,7 @@ import org.apache.flink.connector.base.sink.throwable.FatalExceptionClassifier;
 import org.apache.flink.connector.base.sink.writer.AsyncSinkWriter;
 import org.apache.flink.connector.base.sink.writer.BufferedRequestState;
 import org.apache.flink.connector.base.sink.writer.ElementConverter;
+import org.apache.flink.connector.base.sink.writer.ResultHandler;
 import org.apache.flink.connector.base.sink.writer.config.AsyncSinkWriterConfiguration;
 import org.apache.flink.connector.sqs.sink.client.SdkClientProvider;
 import org.apache.flink.metrics.Counter;
@@ -41,11 +42,9 @@ import software.amazon.awssdk.services.sqs.model.SendMessageBatchResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
 
 import static org.apache.flink.connector.aws.util.AWSCredentialFatalExceptionClassifiers.getInvalidCredentialsExceptionClassifier;
 import static org.apache.flink.connector.aws.util.AWSCredentialFatalExceptionClassifiers.getSdkClientMisconfiguredExceptionClassifier;
@@ -123,7 +122,7 @@ class SqsSinkWriter<InputT> extends AsyncSinkWriter<InputT, SendMessageBatchRequ
     @Override
     protected void submitRequestEntries(
             List<SendMessageBatchRequestEntry> requestEntries,
-            Consumer<List<SendMessageBatchRequestEntry>> requestResult) {
+            ResultHandler<SendMessageBatchRequestEntry> resultHandler) {
 
         final SendMessageBatchRequest batchRequest =
                 SendMessageBatchRequest.builder().entries(requestEntries).queueUrl(sqsUrl).build();
@@ -134,20 +133,19 @@ class SqsSinkWriter<InputT> extends AsyncSinkWriter<InputT, SendMessageBatchRequ
         future.whenComplete(
                         (response, err) -> {
                             if (err != null) {
-                                handleFullyFailedRequest(err, requestEntries, requestResult);
-                            } else if (response.failed() != null && response.failed().size() > 0) {
+                                handleFullyFailedRequest(err, requestEntries, resultHandler);
+                            } else if (response.failed() != null && !response.failed().isEmpty()) {
                                 handlePartiallyFailedRequest(
-                                        response, requestEntries, requestResult);
+                                        response, requestEntries, resultHandler);
                             } else {
-                                requestResult.accept(Collections.emptyList());
+                                resultHandler.complete();
                             }
                         })
                 .exceptionally(
                         ex -> {
-                            getFatalExceptionCons()
-                                    .accept(
-                                            new SqsSinkException.SqsFailFastSinkException(
-                                                    ex.getMessage(), ex));
+                            resultHandler.completeExceptionally(
+                                    new SqsSinkException.SqsFailFastSinkException(
+                                            ex.getMessage(), ex));
                             return null;
                         });
     }
@@ -165,16 +163,17 @@ class SqsSinkWriter<InputT> extends AsyncSinkWriter<InputT, SendMessageBatchRequ
     private void handleFullyFailedRequest(
             Throwable err,
             List<SendMessageBatchRequestEntry> requestEntries,
-            Consumer<List<SendMessageBatchRequestEntry>> requestResult) {
+            ResultHandler<SendMessageBatchRequestEntry> resultHandler) {
 
         numRecordsOutErrorsCounter.inc(requestEntries.size());
-        boolean isFatal = SQS_EXCEPTION_HANDLER.consumeIfFatal(err, getFatalExceptionCons());
+        boolean isFatal =
+                SQS_EXCEPTION_HANDLER.consumeIfFatal(err, resultHandler::completeExceptionally);
         if (isFatal) {
             return;
         }
 
         if (failOnError) {
-            getFatalExceptionCons().accept(new SqsSinkException.SqsFailFastSinkException(err));
+            resultHandler.completeExceptionally(new SqsSinkException.SqsFailFastSinkException(err));
             return;
         }
 
@@ -183,13 +182,13 @@ class SqsSinkWriter<InputT> extends AsyncSinkWriter<InputT, SendMessageBatchRequ
                 requestEntries.size(),
                 requestEntries.get(0).toString(),
                 err);
-        requestResult.accept(requestEntries);
+        resultHandler.retryForEntries(requestEntries);
     }
 
     private void handlePartiallyFailedRequest(
             SendMessageBatchResponse response,
             List<SendMessageBatchRequestEntry> requestEntries,
-            Consumer<List<SendMessageBatchRequestEntry>> requestResult) {
+            ResultHandler<SendMessageBatchRequestEntry> resultHandler) {
 
         LOG.warn(
                 "handlePartiallyFailedRequest: SQS Sink failed to write and will retry {} entries to SQS",
@@ -197,7 +196,7 @@ class SqsSinkWriter<InputT> extends AsyncSinkWriter<InputT, SendMessageBatchRequ
         numRecordsOutErrorsCounter.inc(response.failed().size());
 
         if (failOnError) {
-            getFatalExceptionCons().accept(new SqsSinkException.SqsFailFastSinkException());
+            resultHandler.completeExceptionally(new SqsSinkException.SqsFailFastSinkException());
             return;
         }
 
@@ -212,15 +211,14 @@ class SqsSinkWriter<InputT> extends AsyncSinkWriter<InputT, SendMessageBatchRequ
             } else {
                 LOG.error(
                         "handlePartiallyFailedRequest: SQS Sink failed to retry unsuccessful SQS publish request due to invalid failed requestId");
-                getFatalExceptionCons()
-                        .accept(
-                                new SqsSinkException.SqsFailFastSinkException(
-                                        "SQS Sink failed to retry unsuccessful SQS publish request due to invalid failed requestId"));
+                resultHandler.completeExceptionally(
+                        new SqsSinkException.SqsFailFastSinkException(
+                                "SQS Sink failed to retry unsuccessful SQS publish request due to invalid failed requestId"));
                 return;
             }
         }
 
-        requestResult.accept(failedRequestEntries);
+        resultHandler.retryForEntries(failedRequestEntries);
     }
 
     private Optional<SendMessageBatchRequestEntry> getFailedRecord(

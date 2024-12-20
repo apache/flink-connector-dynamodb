@@ -26,6 +26,7 @@ import org.apache.flink.connector.base.sink.throwable.FatalExceptionClassifier;
 import org.apache.flink.connector.base.sink.writer.AsyncSinkWriter;
 import org.apache.flink.connector.base.sink.writer.BufferedRequestState;
 import org.apache.flink.connector.base.sink.writer.ElementConverter;
+import org.apache.flink.connector.base.sink.writer.ResultHandler;
 import org.apache.flink.connector.base.sink.writer.config.AsyncSinkWriterConfiguration;
 import org.apache.flink.metrics.Counter;
 import org.apache.flink.metrics.groups.SinkWriterMetricGroup;
@@ -45,7 +46,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
 
 import static org.apache.flink.connector.aws.util.AWSCredentialFatalExceptionClassifiers.getInvalidCredentialsExceptionClassifier;
 import static org.apache.flink.connector.aws.util.AWSCredentialFatalExceptionClassifiers.getSdkClientMisconfiguredExceptionClassifier;
@@ -171,7 +171,7 @@ class KinesisFirehoseSinkWriter<InputT> extends AsyncSinkWriter<InputT, Record> 
 
     @Override
     protected void submitRequestEntries(
-            List<Record> requestEntries, Consumer<List<Record>> requestResult) {
+            List<Record> requestEntries, ResultHandler<Record> resultHandler) {
 
         PutRecordBatchRequest batchRequest =
                 PutRecordBatchRequest.builder()
@@ -185,11 +185,11 @@ class KinesisFirehoseSinkWriter<InputT> extends AsyncSinkWriter<InputT, Record> 
         future.whenComplete(
                 (response, err) -> {
                     if (err != null) {
-                        handleFullyFailedRequest(err, requestEntries, requestResult);
+                        handleFullyFailedRequest(err, requestEntries, resultHandler);
                     } else if (response.failedPutCount() > 0) {
-                        handlePartiallyFailedRequest(response, requestEntries, requestResult);
+                        handlePartiallyFailedRequest(response, requestEntries, resultHandler);
                     } else {
-                        requestResult.accept(Collections.emptyList());
+                        resultHandler.complete();
                     }
                 });
     }
@@ -205,17 +205,19 @@ class KinesisFirehoseSinkWriter<InputT> extends AsyncSinkWriter<InputT, Record> 
     }
 
     private void handleFullyFailedRequest(
-            Throwable err, List<Record> requestEntries, Consumer<List<Record>> requestResult) {
+            Throwable err, List<Record> requestEntries, ResultHandler<Record> resultHandler) {
 
         numRecordsOutErrorsCounter.inc(requestEntries.size());
-        boolean isFatal = FIREHOSE_EXCEPTION_HANDLER.consumeIfFatal(err, getFatalExceptionCons());
+        boolean isFatal =
+                FIREHOSE_EXCEPTION_HANDLER.consumeIfFatal(
+                        err, resultHandler::completeExceptionally);
         if (isFatal) {
             return;
         }
 
         if (failOnError) {
-            getFatalExceptionCons()
-                    .accept(new KinesisFirehoseException.KinesisFirehoseFailFastException(err));
+            resultHandler.completeExceptionally(
+                    new KinesisFirehoseException.KinesisFirehoseFailFastException(err));
             return;
         }
 
@@ -223,17 +225,17 @@ class KinesisFirehoseSinkWriter<InputT> extends AsyncSinkWriter<InputT, Record> 
                 "KDF Sink failed to write and will retry {} entries to KDF",
                 requestEntries.size(),
                 err);
-        requestResult.accept(requestEntries);
+        resultHandler.retryForEntries(requestEntries);
     }
 
     private void handlePartiallyFailedRequest(
             PutRecordBatchResponse response,
             List<Record> requestEntries,
-            Consumer<List<Record>> requestResult) {
+            ResultHandler<Record> resultHandler) {
         numRecordsOutErrorsCounter.inc(response.failedPutCount());
         if (failOnError) {
-            getFatalExceptionCons()
-                    .accept(new KinesisFirehoseException.KinesisFirehoseFailFastException());
+            resultHandler.completeExceptionally(
+                    new KinesisFirehoseException.KinesisFirehoseFailFastException());
             return;
         }
 
@@ -248,6 +250,6 @@ class KinesisFirehoseSinkWriter<InputT> extends AsyncSinkWriter<InputT, Record> 
             }
         }
 
-        requestResult.accept(failedRequestEntries);
+        resultHandler.retryForEntries(failedRequestEntries);
     }
 }

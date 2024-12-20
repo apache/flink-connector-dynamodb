@@ -21,10 +21,10 @@ import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.api.connector.sink2.SinkWriter;
 import org.apache.flink.connector.aws.testutils.AWSServicesTestUtils;
 import org.apache.flink.connector.base.sink.writer.ElementConverter;
+import org.apache.flink.connector.base.sink.writer.ResultHandler;
 import org.apache.flink.connector.base.sink.writer.TestSinkInitContext;
 import org.apache.flink.connector.sqs.sink.client.SdkClientProvider;
 
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
 import software.amazon.awssdk.core.exception.SdkClientException;
@@ -48,7 +48,6 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
-import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
@@ -71,12 +70,10 @@ public class SqsSinkWriterTest {
         TestSqsAsyncClientProvider testSqsAsyncClientProvider =
                 new TestSqsAsyncClientProvider(sqsAsyncClient);
         sinkWriter = getSqsSinkWriter(false, testSqsAsyncClientProvider);
-        CompletableFuture<List<SendMessageBatchRequestEntry>> failedRequests =
-                new CompletableFuture<>();
-        Consumer<List<SendMessageBatchRequestEntry>> failedRequestConsumer =
-                failedRequests::complete;
-        sinkWriter.submitRequestEntries(getDefaultInputRequests(), failedRequestConsumer);
-        assertThat(failedRequests).isNotCompleted();
+        TestingResultHandler resultHandler = new TestingResultHandler();
+        sinkWriter.submitRequestEntries(getDefaultInputRequests(), resultHandler);
+        assertThat(resultHandler.isComplete()).isFalse();
+        assertThat(resultHandler.getExceptionThrown()).isNotNull();
     }
 
     @Test
@@ -87,12 +84,10 @@ public class SqsSinkWriterTest {
                 new TestSqsAsyncClientProvider(sqsAsyncClient);
         sinkWriter = getSqsSinkWriter(true, testSqsAsyncClientProvider);
 
-        CompletableFuture<List<SendMessageBatchRequestEntry>> failedRequests =
-                new CompletableFuture<>();
-        Consumer<List<SendMessageBatchRequestEntry>> failedRequestConsumer =
-                failedRequests::complete;
-        sinkWriter.submitRequestEntries(getDefaultInputRequests(), failedRequestConsumer);
-        assertThat(failedRequests).isNotCompleted();
+        TestingResultHandler resultHandler = new TestingResultHandler();
+        sinkWriter.submitRequestEntries(getDefaultInputRequests(), resultHandler);
+        assertThat(resultHandler.isComplete()).isFalse();
+        assertThat(resultHandler.getExceptionThrown()).isNotNull();
     }
 
     @Test
@@ -103,12 +98,10 @@ public class SqsSinkWriterTest {
                 new TestSqsAsyncClientProvider(sqsAsyncClient);
         sinkWriter = getSqsSinkWriter(false, testSqsAsyncClientProvider);
 
-        CompletableFuture<List<SendMessageBatchRequestEntry>> failedRequests =
-                new CompletableFuture<>();
-        Consumer<List<SendMessageBatchRequestEntry>> failedRequestConsumer =
-                failedRequests::complete;
-        sinkWriter.submitRequestEntries(getDefaultInputRequests(), failedRequestConsumer);
-        assertThat(failedRequests).isCompleted();
+        TestingResultHandler resultHandler = new TestingResultHandler();
+        sinkWriter.submitRequestEntries(getDefaultInputRequests(), resultHandler);
+        assertThat(resultHandler.isComplete()).isFalse();
+        assertThat(resultHandler.getFailedRequests()).hasSize(2);
     }
 
     @Test
@@ -118,13 +111,12 @@ public class SqsSinkWriterTest {
                 new TestSqsAsyncClientProvider(sqsAsyncClient);
         sinkWriter = getSqsSinkWriter(false, testSqsAsyncClientProvider);
 
-        CompletableFuture<List<SendMessageBatchRequestEntry>> requests = new CompletableFuture<>();
-        Consumer<List<SendMessageBatchRequestEntry>> requestResult = requests::complete;
+        TestingResultHandler resultHandler = new TestingResultHandler();
 
-        sinkWriter.submitRequestEntries(getDefaultInputRequests(), requestResult);
+        sinkWriter.submitRequestEntries(getDefaultInputRequests(), resultHandler);
 
-        List<SendMessageBatchRequestEntry> result = requests.join();
-        Assertions.assertTrue(result.isEmpty());
+        assertThat(resultHandler.isComplete()).isTrue();
+        assertThat(resultHandler.getFailedRequests()).isEmpty();
     }
 
     @Test
@@ -135,13 +127,10 @@ public class SqsSinkWriterTest {
                 new TestSqsAsyncClientProvider(sqsAsyncClient);
         sinkWriter = getSqsSinkWriter(false, testSqsAsyncClientProvider);
 
-        CompletableFuture<List<SendMessageBatchRequestEntry>> requests = new CompletableFuture<>();
-        Consumer<List<SendMessageBatchRequestEntry>> requestResult = requests::complete;
+        TestingResultHandler resultHandler = new TestingResultHandler();
+        sinkWriter.submitRequestEntries(getDefaultInputRequests(), resultHandler);
 
-        sinkWriter.submitRequestEntries(getDefaultInputRequests(), requestResult);
-
-        List<SendMessageBatchRequestEntry> result = requests.join();
-        Assertions.assertEquals(1, result.size());
+        assertThat(resultHandler.getFailedRequests()).hasSize(1);
     }
 
     @Test
@@ -153,11 +142,11 @@ public class SqsSinkWriterTest {
                 new TestSqsAsyncClientProvider(sqsAsyncClient);
         sinkWriter = getSqsSinkWriter(false, testSqsAsyncClientProvider);
 
-        CompletableFuture<List<SendMessageBatchRequestEntry>> requests = new CompletableFuture<>();
-        Consumer<List<SendMessageBatchRequestEntry>> requestResult = requests::complete;
+        TestingResultHandler resultHandler = new TestingResultHandler();
 
-        sinkWriter.submitRequestEntries(getDefaultInputRequests(), requestResult);
-        assertThat(requests).isNotCompleted();
+        sinkWriter.submitRequestEntries(getDefaultInputRequests(), resultHandler);
+        assertThat(resultHandler.isComplete()).isFalse();
+        assertThat(resultHandler.getExceptionThrown()).isNotNull();
     }
 
     @Test
@@ -169,11 +158,11 @@ public class SqsSinkWriterTest {
                 new TestSqsAsyncClientProvider(sqsAsyncClient);
         sinkWriter = getSqsSinkWriter(true, testSqsAsyncClientProvider);
 
-        CompletableFuture<List<SendMessageBatchRequestEntry>> requests = new CompletableFuture<>();
-        Consumer<List<SendMessageBatchRequestEntry>> requestResult = requests::complete;
+        TestingResultHandler resultHandler = new TestingResultHandler();
 
-        sinkWriter.submitRequestEntries(getDefaultInputRequests(), requestResult);
-        assertThat(requests).isNotCompleted();
+        sinkWriter.submitRequestEntries(getDefaultInputRequests(), resultHandler);
+        assertThat(resultHandler.isComplete()).isFalse();
+        assertThat(resultHandler.getExceptionThrown()).isNotNull();
     }
 
     @Test
@@ -281,6 +270,40 @@ public class SqsSinkWriterTest {
                                         .errorCode("SomeErrorCodeThatIsNotUsed")
                                         .build())
                         .build());
+    }
+
+    private static class TestingResultHandler
+            implements ResultHandler<SendMessageBatchRequestEntry> {
+        private boolean isComplete = false;
+        private Exception exceptionThrown = null;
+        private final List<SendMessageBatchRequestEntry> failedRequests = new ArrayList<>();
+
+        @Override
+        public void complete() {
+            isComplete = true;
+        }
+
+        @Override
+        public void completeExceptionally(Exception e) {
+            exceptionThrown = e;
+        }
+
+        @Override
+        public void retryForEntries(List<SendMessageBatchRequestEntry> list) {
+            failedRequests.addAll(list);
+        }
+
+        public boolean isComplete() {
+            return isComplete;
+        }
+
+        public Exception getExceptionThrown() {
+            return exceptionThrown;
+        }
+
+        public List<SendMessageBatchRequestEntry> getFailedRequests() {
+            return failedRequests;
+        }
     }
 
     private static class ThrowingSqsAsyncClient<T extends Throwable> implements SqsAsyncClient {

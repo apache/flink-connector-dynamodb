@@ -25,6 +25,7 @@ import org.apache.flink.connector.base.sink.throwable.FatalExceptionClassifier;
 import org.apache.flink.connector.base.sink.writer.AsyncSinkWriter;
 import org.apache.flink.connector.base.sink.writer.BufferedRequestState;
 import org.apache.flink.connector.base.sink.writer.ElementConverter;
+import org.apache.flink.connector.base.sink.writer.ResultHandler;
 import org.apache.flink.connector.dynamodb.sink.client.SdkClientProvider;
 import org.apache.flink.connector.dynamodb.util.PrimaryKeyBuilder;
 import org.apache.flink.metrics.Counter;
@@ -45,12 +46,10 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
 
 import static java.util.Collections.singletonMap;
 import static org.apache.flink.connector.aws.util.AWSCredentialFatalExceptionClassifiers.getInvalidCredentialsExceptionClassifier;
@@ -160,7 +159,7 @@ class DynamoDbSinkWriter<InputT> extends AsyncSinkWriter<InputT, DynamoDbWriteRe
     @Override
     protected void submitRequestEntries(
             List<DynamoDbWriteRequest> requestEntries,
-            Consumer<List<DynamoDbWriteRequest>> requestResultConsumer) {
+            ResultHandler<DynamoDbWriteRequest> resultHandler) {
 
         List<WriteRequest> items = new ArrayList<>();
 
@@ -190,17 +189,17 @@ class DynamoDbSinkWriter<InputT> extends AsyncSinkWriter<InputT, DynamoDbWriteRe
         future.whenComplete(
                 (response, err) -> {
                     if (err != null) {
-                        handleFullyFailedRequest(err, requestEntries, requestResultConsumer);
+                        handleFullyFailedRequest(err, requestEntries, resultHandler);
                     } else if (!CollectionUtil.isNullOrEmpty(response.unprocessedItems())) {
-                        handlePartiallyUnprocessedRequest(response, requestResultConsumer);
+                        handlePartiallyUnprocessedRequest(response, resultHandler);
                     } else {
-                        requestResultConsumer.accept(Collections.emptyList());
+                        resultHandler.complete();
                     }
                 });
     }
 
     private void handlePartiallyUnprocessedRequest(
-            BatchWriteItemResponse response, Consumer<List<DynamoDbWriteRequest>> requestResult) {
+            BatchWriteItemResponse response, ResultHandler<DynamoDbWriteRequest> resultHandler) {
         List<DynamoDbWriteRequest> unprocessed = new ArrayList<>();
 
         for (WriteRequest writeRequest : response.unprocessedItems().get(tableName)) {
@@ -211,32 +210,33 @@ class DynamoDbSinkWriter<InputT> extends AsyncSinkWriter<InputT, DynamoDbWriteRe
         numRecordsSendErrorsCounter.inc(unprocessed.size());
         numRecordsSendPartialFailure.inc(unprocessed.size());
 
-        requestResult.accept(unprocessed);
+        resultHandler.retryForEntries(unprocessed);
     }
 
     private void handleFullyFailedRequest(
             Throwable err,
             List<DynamoDbWriteRequest> requestEntries,
-            Consumer<List<DynamoDbWriteRequest>> requestResult) {
+            ResultHandler<DynamoDbWriteRequest> resultHandler) {
         LOG.warn(
                 "DynamoDB Sink failed to persist and will retry {} entries.",
                 requestEntries.size(),
                 err);
         numRecordsSendErrorsCounter.inc(requestEntries.size());
 
-        if (isRetryable(err.getCause())) {
-            requestResult.accept(requestEntries);
+        if (isRetryable(err.getCause(), resultHandler)) {
+            resultHandler.retryForEntries(requestEntries);
         }
     }
 
-    private boolean isRetryable(Throwable err) {
+    private boolean isRetryable(Throwable err, ResultHandler<DynamoDbWriteRequest> resultHandler) {
         // isFatal() is really isNotFatal()
-        if (!DYNAMODB_FATAL_EXCEPTION_CLASSIFIER.isFatal(err, getFatalExceptionCons())) {
+        if (!DYNAMODB_FATAL_EXCEPTION_CLASSIFIER.isFatal(
+                err, resultHandler::completeExceptionally)) {
             return false;
         }
         if (failOnError) {
-            getFatalExceptionCons()
-                    .accept(new DynamoDbSinkException.DynamoDbSinkFailFastException(err));
+            resultHandler.completeExceptionally(
+                    new DynamoDbSinkException.DynamoDbSinkFailFastException(err));
             return false;
         }
 

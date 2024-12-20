@@ -18,6 +18,7 @@
 
 package org.apache.flink.connector.dynamodb.sink;
 
+import org.apache.flink.connector.base.sink.writer.ResultHandler;
 import org.apache.flink.connector.base.sink.writer.TestSinkInitContext;
 import org.apache.flink.connector.dynamodb.sink.client.SdkClientProvider;
 
@@ -48,8 +49,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -64,7 +63,6 @@ public class DynamoDbSinkWriterTest {
     private static final String PARTITION_KEY = "partition_key";
     private static final String SORT_KEY = "sort_key";
     private static final String TABLE_NAME = "table_name";
-    private static final long FUTURE_TIMEOUT_MS = 1000;
 
     @Test
     public void testSuccessfulRequestWithNoDeduplication() throws Exception {
@@ -86,14 +84,13 @@ public class DynamoDbSinkWriterTest {
         DynamoDbSinkWriter<Map<String, AttributeValue>> dynamoDbSinkWriter =
                 getDefaultSinkWriter(
                         true, overwriteByPartitionKeys, () -> trackingDynamoDbAsyncClient);
-        CompletableFuture<List<DynamoDbWriteRequest>> failedRequests = new CompletableFuture<>();
-        Consumer<List<DynamoDbWriteRequest>> failedRequestConsumer = failedRequests::complete;
+        TestingResultHandler resultHandler = new TestingResultHandler();
 
-        dynamoDbSinkWriter.submitRequestEntries(inputRequests, failedRequestConsumer);
+        dynamoDbSinkWriter.submitRequestEntries(inputRequests, resultHandler);
         assertThat(trackingDynamoDbAsyncClient.getRequestHistory())
                 .isNotEmpty()
                 .containsExactly(expectedClientRequests);
-        assertThat(failedRequests.get(FUTURE_TIMEOUT_MS, TimeUnit.MILLISECONDS)).isEmpty();
+        assertThat(resultHandler.isComplete()).isTrue();
     }
 
     @Test
@@ -108,14 +105,13 @@ public class DynamoDbSinkWriterTest {
         DynamoDbSinkWriter<Map<String, AttributeValue>> dynamoDbSinkWriter =
                 getDefaultSinkWriter(
                         true, overwriteByPartitionKeys, () -> trackingDynamoDbAsyncClient);
-        CompletableFuture<List<DynamoDbWriteRequest>> failedRequests = new CompletableFuture<>();
-        Consumer<List<DynamoDbWriteRequest>> failedRequestConsumer = failedRequests::complete;
 
-        dynamoDbSinkWriter.submitRequestEntries(inputRequests, failedRequestConsumer);
+        TestingResultHandler resultHandler = new TestingResultHandler();
+        dynamoDbSinkWriter.submitRequestEntries(inputRequests, resultHandler);
         assertThat(trackingDynamoDbAsyncClient.getRequestHistory())
                 .isNotEmpty()
                 .containsExactly(expectedClientRequests);
-        assertThat(failedRequests.get(FUTURE_TIMEOUT_MS, TimeUnit.MILLISECONDS)).isEmpty();
+        assertThat(resultHandler.isComplete()).isTrue();
     }
 
     @Test
@@ -131,14 +127,13 @@ public class DynamoDbSinkWriterTest {
         DynamoDbSinkWriter<Map<String, AttributeValue>> dynamoDbSinkWriter =
                 getDefaultSinkWriter(
                         true, overwriteByPartitionKeys, () -> trackingDynamoDbAsyncClient);
-        CompletableFuture<List<DynamoDbWriteRequest>> failedRequests = new CompletableFuture<>();
-        Consumer<List<DynamoDbWriteRequest>> failedRequestConsumer = failedRequests::complete;
+        TestingResultHandler resultHandler = new TestingResultHandler();
 
-        dynamoDbSinkWriter.submitRequestEntries(inputRequests, failedRequestConsumer);
+        dynamoDbSinkWriter.submitRequestEntries(inputRequests, resultHandler);
         assertThat(trackingDynamoDbAsyncClient.getRequestHistory())
                 .isNotEmpty()
                 .containsExactly(expectedClientRequests);
-        assertThat(failedRequests.get(FUTURE_TIMEOUT_MS, TimeUnit.MILLISECONDS)).isEmpty();
+        assertThat(resultHandler.isComplete()).isTrue();
     }
 
     @Test
@@ -159,10 +154,9 @@ public class DynamoDbSinkWriterTest {
         DynamoDbSinkWriter<Map<String, AttributeValue>> dynamoDbSinkWriter =
                 getDefaultSinkWriter(
                         true, overwriteByPartitionKeys, () -> trackingDynamoDbAsyncClient);
-        CompletableFuture<List<DynamoDbWriteRequest>> failedRequests = new CompletableFuture<>();
-        Consumer<List<DynamoDbWriteRequest>> failedRequestConsumer = failedRequests::complete;
+        TestingResultHandler resultHandler = new TestingResultHandler();
 
-        dynamoDbSinkWriter.submitRequestEntries(inputRequests, failedRequestConsumer);
+        dynamoDbSinkWriter.submitRequestEntries(inputRequests, resultHandler);
         // Order does not matter in a batch write request
         assertThat(trackingDynamoDbAsyncClient.getRequestHistory())
                 .isNotEmpty()
@@ -171,7 +165,7 @@ public class DynamoDbSinkWriterTest {
                                 assertThat(clientBatchRequest)
                                         .containsExactlyInAnyOrderElementsOf(
                                                 expectedClientRequests));
-        assertThat(failedRequests.get(FUTURE_TIMEOUT_MS, TimeUnit.MILLISECONDS)).isEmpty();
+        assertThat(resultHandler.isComplete()).isTrue();
     }
 
     @Test
@@ -193,12 +187,12 @@ public class DynamoDbSinkWriterTest {
         DynamoDbSinkWriter<Map<String, AttributeValue>> dynamoDbSinkWriter =
                 getDefaultSinkWriter(
                         failOnError, Collections.emptyList(), () -> throwingDynamoDbAsyncClient);
-        CompletableFuture<List<DynamoDbWriteRequest>> failedRequests = new CompletableFuture<>();
-        Consumer<List<DynamoDbWriteRequest>> failedRequestConsumer = failedRequests::complete;
+        TestingResultHandler resultHandler = new TestingResultHandler();
 
-        dynamoDbSinkWriter.submitRequestEntries(inputRequests, failedRequestConsumer);
+        dynamoDbSinkWriter.submitRequestEntries(inputRequests, resultHandler);
 
-        assertThat(failedRequests.get(FUTURE_TIMEOUT_MS, TimeUnit.MILLISECONDS))
+        assertThat(resultHandler.isComplete()).isFalse();
+        assertThat(resultHandler.getRetryEntries())
                 .containsExactlyInAnyOrderElementsOf(inputRequests);
     }
 
@@ -224,12 +218,12 @@ public class DynamoDbSinkWriterTest {
                         failOnError,
                         Collections.emptyList(),
                         () -> failingRecordsDynamoDbAsyncClient);
-        CompletableFuture<List<DynamoDbWriteRequest>> failedRequests = new CompletableFuture<>();
-        Consumer<List<DynamoDbWriteRequest>> failedRequestConsumer = failedRequests::complete;
+        TestingResultHandler resultHandler = new TestingResultHandler();
 
-        dynamoDbSinkWriter.submitRequestEntries(inputRequests, failedRequestConsumer);
+        dynamoDbSinkWriter.submitRequestEntries(inputRequests, resultHandler);
 
-        assertThat(failedRequests.get(FUTURE_TIMEOUT_MS, TimeUnit.MILLISECONDS))
+        assertThat(resultHandler.isComplete()).isFalse();
+        assertThat(resultHandler.getRetryEntries())
                 .usingRecursiveComparison()
                 .isEqualTo(expectedRetriedRecords);
     }
@@ -334,11 +328,19 @@ public class DynamoDbSinkWriterTest {
         DynamoDbSinkWriter<Map<String, AttributeValue>> dynamoDbSinkWriter =
                 getDefaultSinkWriter(
                         failOnError, Collections.emptyList(), () -> throwingDynamoDbAsyncClient);
-        CompletableFuture<List<DynamoDbWriteRequest>> failedRequests = new CompletableFuture<>();
-        Consumer<List<DynamoDbWriteRequest>> failedRequestConsumer = failedRequests::complete;
+        TestingResultHandler resultHandler = new TestingResultHandler();
 
-        dynamoDbSinkWriter.submitRequestEntries(getDefaultInputRequests(), failedRequestConsumer);
-        assertThat(failedRequests).isNotCompleted();
+        dynamoDbSinkWriter.submitRequestEntries(getDefaultInputRequests(), resultHandler);
+        assertThat(resultHandler.isComplete()).isFalse();
+        assertThat(resultHandler.getRetryEntries()).isEmpty();
+        // assert exceptionToThrow is thrown or wrapped
+        assertThat(resultHandler.getException())
+                .satisfies(
+                        e ->
+                                assertThat(
+                                                (e == exceptionToThrow.get()
+                                                        || e.getCause() == exceptionToThrow.get()))
+                                        .isTrue());
     }
 
     private DynamoDbSinkWriter<Map<String, AttributeValue>> getDefaultSinkWriter(
@@ -440,6 +442,41 @@ public class DynamoDbSinkWriterTest {
         item.put("string_payload", AttributeValue.builder().s(payload).build());
         item.put("number_payload", AttributeValue.builder().n("1234").build());
         return item;
+    }
+
+    private static class TestingResultHandler implements ResultHandler<DynamoDbWriteRequest> {
+
+        private boolean isComplete = false;
+        private Exception exception;
+
+        private List<DynamoDbWriteRequest> retryEntries = new ArrayList<>();
+
+        @Override
+        public void complete() {
+            isComplete = true;
+        }
+
+        @Override
+        public void completeExceptionally(Exception e) {
+            exception = e;
+        }
+
+        @Override
+        public void retryForEntries(List<DynamoDbWriteRequest> list) {
+            retryEntries.addAll(list);
+        }
+
+        public boolean isComplete() {
+            return isComplete;
+        }
+
+        public Exception getException() {
+            return exception;
+        }
+
+        public List<DynamoDbWriteRequest> getRetryEntries() {
+            return retryEntries;
+        }
     }
 
     private static class TestAsyncDynamoDbClientProvider
