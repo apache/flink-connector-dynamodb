@@ -1,0 +1,56 @@
+flink-sql-connector-sqs
+
+Copyright 2022-2024 The Apache Software Foundation
+
+This product includes software developed at
+The Apache Software Foundation (http://www.apache.org/).
+
+This project bundles the following dependencies under the Apache Software License 2.0. (http://www.apache.org/licenses/LICENSE-2.0.txt)
+
+- software.amazon.awssdk:apache-client:jar:2.26.19
+- software.amazon.awssdk:arns:jar:2.26.19
+- software.amazon.awssdk:sts:jar:2.26.19
+- software.amazon.awssdk:aws-query-protocol:jar:2.26.19
+- software.amazon.awssdk:profiles:jar:2.26.19
+- software.amazon.awssdk:sqs:jar:2.26.19
+- software.amazon.awssdk:aws-json-protocol:jar:2.26.19
+- software.amazon.awssdk:third-party-jackson-core:jar:2.26.19
+- software.amazon.awssdk:protocol-core:jar:2.26.19
+- software.amazon.awssdk:http-auth-aws:jar:2.26.19
+- software.amazon.awssdk:checksums-spi:jar:2.26.19
+- software.amazon.awssdk:checksums:jar:2.26.19
+- software.amazon.awssdk:sdk-core:jar:2.26.19
+- software.amazon.awssdk:retries:jar:2.26.19
+- software.amazon.awssdk:auth:jar:2.26.19
+- software.amazon.awssdk:http-auth-spi:jar:2.26.19
+- software.amazon.awssdk:http-auth:jar:2.26.19
+- software.amazon.awssdk:identity-spi:jar:2.26.19
+- software.amazon.awssdk:http-client-spi:jar:2.26.19
+- software.amazon.awssdk:regions:jar:2.26.19
+- software.amazon.awssdk:annotations:jar:2.26.19
+- software.amazon.awssdk:utils:jar:2.26.19
+- software.amazon.awssdk:aws-core:jar:2.26.19
+- software.amazon.awssdk:metrics-spi:jar:2.26.19
+- software.amazon.awssdk:json-utils:jar:2.26.19
+- software.amazon.awssdk:endpoints-spi:jar:2.26.19
+- software.amazon.awssdk:retries-spi:jar:2.26.19
+- software.amazon.awssdk:netty-nio-client:jar:2.26.19
+- io.netty:netty-codec-http:jar:4.1.86.Final
+- io.netty:netty-codec-http2:jar:4.1.86.Final
+- io.netty:netty-codec:jar:4.1.86.Final
+- io.netty:netty-transport:jar:4.1.86.Final
+- io.netty:netty-common:jar:4.1.86.Final
+- io.netty:netty-buffer:jar:4.1.86.Final
+- io.netty:netty-handler:jar:4.1.86.Final
+- io.netty:netty-transport-native-unix-common:jar:4.1.86.Final
+- io.netty:netty-transport-classes-epoll:jar:4.1.86.Final
+- io.netty:netty-resolver:jar:4.1.86.Final
+- org.apache.httpcomponents:httpclient:jar:4.5.13
+- commons-logging:commons-logging:jar:1.1.3
+- org.apache.httpcomponents:httpcore:jar:4.4.14
+- commons-codec:commons-codec:jar:1.15
+
+
+This project bundles the following dependencies under the MIT-0 license (https://spdx.org/licenses/MIT-0.html).
+
+- org.reactivestreams:reactive-streams:jar:1.0.4

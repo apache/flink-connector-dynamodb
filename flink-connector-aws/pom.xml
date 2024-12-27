@@ -44,6 +44,7 @@ under the License.
         <module>flink-sql-connector-aws-kinesis-firehose</module>
         <module>flink-sql-connector-aws-kinesis-streams</module>
         <module>flink-sql-connector-kinesis</module>
+        <module>flink-sql-connector-sqs</module>
     </modules>
 
 </project>
