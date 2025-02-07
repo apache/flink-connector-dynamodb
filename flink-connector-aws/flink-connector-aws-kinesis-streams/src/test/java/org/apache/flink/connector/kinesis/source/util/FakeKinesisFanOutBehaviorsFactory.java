@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import static com.google.common.collect.Lists.partition;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.commons.lang3.RandomStringUtils.randomAlphabetic;
 import static org.apache.flink.connector.kinesis.source.split.StartingPositionUtil.toSdkStartingPosition;
@@ -121,7 +122,12 @@ public class FakeKinesisFanOutBehaviorsFactory {
                     records.add(createRecord(sequenceNumber));
                 }
 
-                eventBuilder.records(records);
+                List<Record> aggregatedRecords =
+                        partition(records, aggregationFactor).stream()
+                                .map(TestUtil::createAggregatedRecord)
+                                .collect(Collectors.toList());
+
+                eventBuilder.records(aggregatedRecords);
 
                 String continuation =
                         sequenceNumber.get() < totalRecords

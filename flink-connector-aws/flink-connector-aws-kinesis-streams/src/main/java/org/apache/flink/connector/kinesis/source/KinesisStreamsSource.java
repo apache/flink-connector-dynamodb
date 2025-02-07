@@ -70,9 +70,9 @@ import software.amazon.awssdk.services.kinesis.KinesisAsyncClient;
 import software.amazon.awssdk.services.kinesis.KinesisClient;
 import software.amazon.awssdk.services.kinesis.model.DescribeStreamConsumerResponse;
 import software.amazon.awssdk.services.kinesis.model.LimitExceededException;
-import software.amazon.awssdk.services.kinesis.model.Record;
 import software.amazon.awssdk.services.kinesis.model.ResourceNotFoundException;
 import software.amazon.awssdk.utils.AttributeMap;
+import software.amazon.kinesis.retrieval.KinesisClientRecord;
 
 import java.time.Duration;
 import java.util.Map;
@@ -209,8 +209,10 @@ public class KinesisStreamsSource<T>
         return new KinesisStreamsSourceEnumeratorStateSerializer(new KinesisShardSplitSerializer());
     }
 
-    private Supplier<SplitReader<Record, KinesisShardSplit>> getKinesisShardSplitReaderSupplier(
-            Configuration sourceConfig, Map<String, KinesisShardMetrics> shardMetricGroupMap) {
+    private Supplier<SplitReader<KinesisClientRecord, KinesisShardSplit>>
+            getKinesisShardSplitReaderSupplier(
+                    Configuration sourceConfig,
+                    Map<String, KinesisShardMetrics> shardMetricGroupMap) {
         KinesisSourceConfigOptions.ReaderType readerType = sourceConfig.get(READER_TYPE);
         switch (readerType) {
                 // We create a new stream proxy for each split reader since they have their own

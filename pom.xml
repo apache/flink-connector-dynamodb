@@ -333,11 +333,6 @@ under the License.
                 <version>3.24.0-GA</version>
             </dependency>
             <dependency>
-                <groupId>com.google.protobuf</groupId>
-                <artifactId>protobuf-java</artifactId>
-                <version>3.25.5</version>
-            </dependency>
-            <dependency>
                 <groupId>com.google.guava</groupId>
                 <artifactId>guava</artifactId>
                 <version>${guava.version}</version>
@@ -346,6 +341,11 @@ under the License.
                 <groupId>com.amazonaws</groupId>
                 <artifactId>amazon-kinesis-client</artifactId>
                 <version>1.14.8</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.kinesis</groupId>
+                <artifactId>amazon-kinesis-client</artifactId>
+                <version>3.0.1</version>
             </dependency>
             <dependency>
                 <groupId>com.squareup.okio</groupId>

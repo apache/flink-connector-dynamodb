@@ -24,6 +24,7 @@ import org.apache.flink.connector.kinesis.source.config.KinesisSourceConfigOptio
 import org.apache.flink.connector.kinesis.source.metrics.KinesisShardMetrics;
 import org.apache.flink.connector.kinesis.source.proxy.StreamProxy;
 import org.apache.flink.connector.kinesis.source.reader.KinesisShardSplitReaderBase;
+import org.apache.flink.connector.kinesis.source.reader.RecordBatch;
 import org.apache.flink.connector.kinesis.source.split.KinesisShardSplitState;
 
 import software.amazon.awssdk.services.kinesis.model.GetRecordsResponse;
@@ -59,8 +60,12 @@ public class PollingKinesisShardSplitReader extends KinesisShardSplitReaderBase 
                         splitState.getNextStartingPosition(),
                         this.maxRecordsToGet);
         boolean isCompleted = getRecordsResponse.nextShardIterator() == null;
+
         return new RecordBatch(
-                getRecordsResponse.records(), getRecordsResponse.millisBehindLatest(), isCompleted);
+                getRecordsResponse.records(),
+                splitState.getKinesisShardSplit(),
+                getRecordsResponse.millisBehindLatest(),
+                isCompleted);
     }
 
     @Override

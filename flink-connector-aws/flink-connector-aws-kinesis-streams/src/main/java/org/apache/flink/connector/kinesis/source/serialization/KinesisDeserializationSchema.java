@@ -23,7 +23,7 @@ import org.apache.flink.api.java.typeutils.ResultTypeQueryable;
 import org.apache.flink.connector.kinesis.source.KinesisStreamsSource;
 import org.apache.flink.util.Collector;
 
-import software.amazon.awssdk.services.kinesis.model.Record;
+import software.amazon.kinesis.retrieval.KinesisClientRecord;
 
 import java.io.IOException;
 import java.io.Serializable;
@@ -60,7 +60,7 @@ public interface KinesisDeserializationSchema<T> extends Serializable, ResultTyp
      * @param output the identifier of the shard the record was sent to
      * @throws IOException exception when deserializing record
      */
-    void deserialize(Record record, String stream, String shardId, Collector<T> output)
+    void deserialize(KinesisClientRecord record, String stream, String shardId, Collector<T> output)
             throws IOException;
 
     static <T> KinesisDeserializationSchema<T> of(DeserializationSchema<T> deserializationSchema) {

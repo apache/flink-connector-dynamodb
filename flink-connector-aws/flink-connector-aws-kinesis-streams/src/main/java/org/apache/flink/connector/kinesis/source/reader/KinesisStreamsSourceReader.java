@@ -31,7 +31,7 @@ import org.apache.flink.connector.kinesis.source.split.KinesisShardSplitState;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import software.amazon.awssdk.services.kinesis.model.Record;
+import software.amazon.kinesis.retrieval.KinesisClientRecord;
 
 import java.util.HashSet;
 import java.util.List;
@@ -45,14 +45,14 @@ import java.util.Map;
 @Internal
 public class KinesisStreamsSourceReader<T>
         extends SingleThreadMultiplexSourceReaderBase<
-                Record, T, KinesisShardSplit, KinesisShardSplitState> {
+                KinesisClientRecord, T, KinesisShardSplit, KinesisShardSplitState> {
 
     private static final Logger LOG = LoggerFactory.getLogger(KinesisStreamsSourceReader.class);
     private final Map<String, KinesisShardMetrics> shardMetricGroupMap;
 
     public KinesisStreamsSourceReader(
-            SingleThreadFetcherManager<Record, KinesisShardSplit> splitFetcherManager,
-            RecordEmitter<Record, T, KinesisShardSplitState> recordEmitter,
+            SingleThreadFetcherManager<KinesisClientRecord, KinesisShardSplit> splitFetcherManager,
+            RecordEmitter<KinesisClientRecord, T, KinesisShardSplitState> recordEmitter,
             Configuration config,
             SourceReaderContext context,
             Map<String, KinesisShardMetrics> shardMetricGroupMap) {

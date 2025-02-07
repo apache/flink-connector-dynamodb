@@ -32,8 +32,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.kinesis.model.Record;
 import software.amazon.awssdk.services.kinesis.model.ResourceNotFoundException;
+import software.amazon.kinesis.retrieval.KinesisClientRecord;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -46,6 +48,7 @@ import java.util.stream.Stream;
 import static org.apache.flink.connector.kinesis.source.config.KinesisSourceConfigOptions.SHARD_GET_RECORDS_MAX;
 import static org.apache.flink.connector.kinesis.source.util.KinesisStreamProxyProvider.getTestStreamProxy;
 import static org.apache.flink.connector.kinesis.source.util.TestUtil.STREAM_ARN;
+import static org.apache.flink.connector.kinesis.source.util.TestUtil.convertToKinesisClientRecord;
 import static org.apache.flink.connector.kinesis.source.util.TestUtil.generateShardId;
 import static org.apache.flink.connector.kinesis.source.util.TestUtil.getTestRecord;
 import static org.apache.flink.connector.kinesis.source.util.TestUtil.getTestSplit;
@@ -80,7 +83,7 @@ class PollingKinesisShardSplitReaderTest {
 
     @Test
     void testNoAssignedSplitsHandledGracefully() throws Exception {
-        RecordsWithSplitIds<Record> retrievedRecords = splitReader.fetch();
+        RecordsWithSplitIds<KinesisClientRecord> retrievedRecords = splitReader.fetch();
 
         assertThat(retrievedRecords.nextRecordFromSplit()).isNull();
         assertThat(retrievedRecords.nextSplit()).isNull();
@@ -95,7 +98,7 @@ class PollingKinesisShardSplitReaderTest {
                 new SplitsAddition<>(Collections.singletonList(getTestSplit(TEST_SHARD_ID))));
 
         // When fetching records
-        RecordsWithSplitIds<Record> retrievedRecords = splitReader.fetch();
+        RecordsWithSplitIds<KinesisClientRecord> retrievedRecords = splitReader.fetch();
 
         // Then retrieve no records
         assertThat(retrievedRecords.nextRecordFromSplit()).isNull();
@@ -116,7 +119,7 @@ class PollingKinesisShardSplitReaderTest {
         splitReader.handleSplitsChanges(new SplitsAddition<>(Collections.singletonList(testSplit)));
 
         // When fetching records
-        RecordsWithSplitIds<Record> retrievedRecords = splitReader.fetch();
+        RecordsWithSplitIds<KinesisClientRecord> retrievedRecords = splitReader.fetch();
 
         // Then retrieve no records and mark split as complete
         assertThat(retrievedRecords.nextRecordFromSplit()).isNull();
@@ -128,28 +131,24 @@ class PollingKinesisShardSplitReaderTest {
     void testSingleAssignedSplitAllConsumed() throws Exception {
         // Given assigned split with records
         testStreamProxy.addShards(TEST_SHARD_ID);
-        List<Record> expectedRecords =
+        List<Record> inputRecords =
                 Stream.of(getTestRecord("data-1"), getTestRecord("data-2"), getTestRecord("data-3"))
                         .collect(Collectors.toList());
         testStreamProxy.addRecords(
-                TestUtil.STREAM_ARN,
-                TEST_SHARD_ID,
-                Collections.singletonList(expectedRecords.get(0)));
+                TestUtil.STREAM_ARN, TEST_SHARD_ID, Collections.singletonList(inputRecords.get(0)));
         testStreamProxy.addRecords(
-                TestUtil.STREAM_ARN,
-                TEST_SHARD_ID,
-                Collections.singletonList(expectedRecords.get(1)));
+                TestUtil.STREAM_ARN, TEST_SHARD_ID, Collections.singletonList(inputRecords.get(1)));
         testStreamProxy.addRecords(
-                TestUtil.STREAM_ARN,
-                TEST_SHARD_ID,
-                Collections.singletonList(expectedRecords.get(2)));
+                TestUtil.STREAM_ARN, TEST_SHARD_ID, Collections.singletonList(inputRecords.get(2)));
         splitReader.handleSplitsChanges(
                 new SplitsAddition<>(Collections.singletonList(getTestSplit(TEST_SHARD_ID))));
 
+        List<KinesisClientRecord> expectedRecords = convertToKinesisClientRecord(inputRecords);
+
         // When fetching records
-        List<Record> records = new ArrayList<>();
-        for (int i = 0; i < expectedRecords.size(); i++) {
-            RecordsWithSplitIds<Record> retrievedRecords = splitReader.fetch();
+        List<KinesisClientRecord> records = new ArrayList<>();
+        for (int i = 0; i < inputRecords.size(); i++) {
+            RecordsWithSplitIds<KinesisClientRecord> retrievedRecords = splitReader.fetch();
             records.addAll(readAllRecords(retrievedRecords));
         }
 
@@ -160,33 +159,64 @@ class PollingKinesisShardSplitReaderTest {
     void testMultipleAssignedSplitsAllConsumed() throws Exception {
         // Given assigned split with records
         testStreamProxy.addShards(TEST_SHARD_ID);
-        List<Record> expectedRecords =
+        List<Record> inputRecords =
                 Stream.of(getTestRecord("data-1"), getTestRecord("data-2"), getTestRecord("data-3"))
                         .collect(Collectors.toList());
         testStreamProxy.addRecords(
-                TestUtil.STREAM_ARN,
-                TEST_SHARD_ID,
-                Collections.singletonList(expectedRecords.get(0)));
+                TestUtil.STREAM_ARN, TEST_SHARD_ID, Collections.singletonList(inputRecords.get(0)));
         testStreamProxy.addRecords(
-                TestUtil.STREAM_ARN,
-                TEST_SHARD_ID,
-                Collections.singletonList(expectedRecords.get(1)));
+                TestUtil.STREAM_ARN, TEST_SHARD_ID, Collections.singletonList(inputRecords.get(1)));
         testStreamProxy.addRecords(
-                TestUtil.STREAM_ARN,
-                TEST_SHARD_ID,
-                Collections.singletonList(expectedRecords.get(2)));
+                TestUtil.STREAM_ARN, TEST_SHARD_ID, Collections.singletonList(inputRecords.get(2)));
         splitReader.handleSplitsChanges(
                 new SplitsAddition<>(Collections.singletonList(getTestSplit(TEST_SHARD_ID))));
 
+        List<KinesisClientRecord> expectedRecords = convertToKinesisClientRecord(inputRecords);
+
         // When records are fetched
-        List<Record> fetchedRecords = new ArrayList<>();
+        List<KinesisClientRecord> fetchedRecords = new ArrayList<>();
         for (int i = 0; i < expectedRecords.size(); i++) {
-            RecordsWithSplitIds<Record> retrievedRecords = splitReader.fetch();
+            RecordsWithSplitIds<KinesisClientRecord> retrievedRecords = splitReader.fetch();
             fetchedRecords.addAll(readAllRecords(retrievedRecords));
         }
 
         // Then all records are fetched
         assertThat(fetchedRecords).containsExactlyInAnyOrderElementsOf(expectedRecords);
+    }
+
+    @Test
+    void testAggregatedRecordsAreDeaggregated() throws Exception {
+        // Given assigned split with aggregated records
+        testStreamProxy.addShards(TEST_SHARD_ID);
+        List<Record> inputRecords =
+                Stream.of(getTestRecord("data-1"), getTestRecord("data-2"), getTestRecord("data-3"))
+                        .collect(Collectors.toList());
+
+        KinesisClientRecord aggregatedRecord = TestUtil.createKinesisAggregatedRecord(inputRecords);
+        testStreamProxy.addRecords(
+                TestUtil.STREAM_ARN,
+                TEST_SHARD_ID,
+                Collections.singletonList(TestUtil.convertToRecord(aggregatedRecord)));
+
+        splitReader.handleSplitsChanges(
+                new SplitsAddition<>(Collections.singletonList(getTestSplit(TEST_SHARD_ID))));
+
+        List<ByteBuffer> expectedRecords =
+                convertToKinesisClientRecord(inputRecords).stream()
+                        .map(KinesisClientRecord::data)
+                        .collect(Collectors.toList());
+
+        // When fetching records
+        List<KinesisClientRecord> fetchedRecords = readAllRecords(splitReader.fetch());
+
+        // Then all records are fetched
+        assertThat(fetchedRecords)
+                .allMatch(KinesisClientRecord::aggregated)
+                .allMatch(
+                        record ->
+                                record.explicitHashKey().equals(aggregatedRecord.explicitHashKey()))
+                .extracting("data")
+                .containsExactlyInAnyOrderElementsOf(expectedRecords);
     }
 
     @Test
@@ -199,7 +229,7 @@ class PollingKinesisShardSplitReaderTest {
         testStreamProxy.setShouldCompleteNextShard(true);
 
         // When fetching records
-        RecordsWithSplitIds<Record> retrievedRecords = splitReader.fetch();
+        RecordsWithSplitIds<KinesisClientRecord> retrievedRecords = splitReader.fetch();
 
         // Returns completed split with no records
         assertThat(retrievedRecords.nextRecordFromSplit()).isNull();
@@ -211,21 +241,23 @@ class PollingKinesisShardSplitReaderTest {
     void testFinishedSplitsReturned() throws Exception {
         // Given assigned split with records from completed shard
         testStreamProxy.addShards(TEST_SHARD_ID);
-        List<Record> expectedRecords =
+        List<Record> inputRecords =
                 Stream.of(getTestRecord("data-1"), getTestRecord("data-2"), getTestRecord("data-3"))
                         .collect(Collectors.toList());
-        testStreamProxy.addRecords(TestUtil.STREAM_ARN, TEST_SHARD_ID, expectedRecords);
+        testStreamProxy.addRecords(TestUtil.STREAM_ARN, TEST_SHARD_ID, inputRecords);
         KinesisShardSplit split = getTestSplit(TEST_SHARD_ID);
         splitReader.handleSplitsChanges(new SplitsAddition<>(Collections.singletonList(split)));
 
         // When fetching records
-        List<Record> fetchedRecords = new ArrayList<>();
+        List<KinesisClientRecord> fetchedRecords = new ArrayList<>();
         testStreamProxy.setShouldCompleteNextShard(true);
-        RecordsWithSplitIds<Record> retrievedRecords = splitReader.fetch();
+        RecordsWithSplitIds<KinesisClientRecord> retrievedRecords = splitReader.fetch();
+
+        List<KinesisClientRecord> expectedRecords = convertToKinesisClientRecord(inputRecords);
 
         // Then records can be read successfully, with finishedSplit returned once all records are
         // completed
-        for (int i = 0; i < expectedRecords.size(); i++) {
+        for (int i = 0; i < inputRecords.size(); i++) {
             assertThat(retrievedRecords.nextSplit()).isEqualTo(split.splitId());
             assertThat(retrievedRecords.finishedSplits()).isEmpty();
             fetchedRecords.add(retrievedRecords.nextRecordFromSplit());
@@ -245,21 +277,19 @@ class PollingKinesisShardSplitReaderTest {
         testStreamProxy.addShards(TEST_SHARD_ID);
         KinesisShardSplit testSplit = getTestSplit(TEST_SHARD_ID);
 
-        List<Record> expectedRecords =
+        List<Record> inputRecords =
                 Stream.of(getTestRecord("data-1"), getTestRecord("data-2"))
                         .collect(Collectors.toList());
         testStreamProxy.addRecords(
-                TestUtil.STREAM_ARN,
-                TEST_SHARD_ID,
-                Collections.singletonList(expectedRecords.get(0)));
+                TestUtil.STREAM_ARN, TEST_SHARD_ID, Collections.singletonList(inputRecords.get(0)));
         testStreamProxy.addRecords(
-                TestUtil.STREAM_ARN,
-                TEST_SHARD_ID,
-                Collections.singletonList(expectedRecords.get(1)));
+                TestUtil.STREAM_ARN, TEST_SHARD_ID, Collections.singletonList(inputRecords.get(1)));
         splitReader.handleSplitsChanges(new SplitsAddition<>(Collections.singletonList(testSplit)));
 
+        List<KinesisClientRecord> expectedRecords = convertToKinesisClientRecord(inputRecords);
+
         // read data from split
-        RecordsWithSplitIds<Record> records = splitReader.fetch();
+        RecordsWithSplitIds<KinesisClientRecord> records = splitReader.fetch();
         assertThat(readAllRecords(records)).containsExactlyInAnyOrder(expectedRecords.get(0));
 
         // pause split
@@ -330,12 +360,15 @@ class PollingKinesisShardSplitReaderTest {
                 Arrays.asList(testSplit1, testSplit3), Collections.emptyList());
 
         // read data from splits and verify that only records from split 2 were fetched by reader
-        List<Record> fetchedRecords = new ArrayList<>();
+        List<KinesisClientRecord> fetchedRecords = new ArrayList<>();
         for (int i = 0; i < 10; i++) {
-            RecordsWithSplitIds<Record> records = splitReader.fetch();
+            RecordsWithSplitIds<KinesisClientRecord> records = splitReader.fetch();
             fetchedRecords.addAll(readAllRecords(records));
         }
-        assertThat(fetchedRecords).containsExactly(recordsFromSplit2.toArray(new Record[0]));
+
+        List<KinesisClientRecord> expectedRecordsFromSplit2 =
+                convertToKinesisClientRecord(recordsFromSplit2);
+        assertThat(fetchedRecords).containsExactlyElementsOf(expectedRecordsFromSplit2);
 
         // resume split 3
         splitReader.pauseOrResumeSplits(
@@ -344,10 +377,13 @@ class PollingKinesisShardSplitReaderTest {
         // read data from splits and verify that only records from split 3 had been read
         fetchedRecords.clear();
         for (int i = 0; i < 10; i++) {
-            RecordsWithSplitIds<Record> records = splitReader.fetch();
+            RecordsWithSplitIds<KinesisClientRecord> records = splitReader.fetch();
             fetchedRecords.addAll(readAllRecords(records));
         }
-        assertThat(fetchedRecords).containsExactly(recordsFromSplit3.toArray(new Record[0]));
+
+        List<KinesisClientRecord> expectedRecordsFromSplit3 =
+                convertToKinesisClientRecord(recordsFromSplit3);
+        assertThat(fetchedRecords).containsExactlyElementsOf(expectedRecordsFromSplit3);
     }
 
     @Test
@@ -388,16 +424,17 @@ class PollingKinesisShardSplitReaderTest {
         splitReader.handleSplitsChanges(
                 new SplitsAddition<>(Collections.singletonList(getTestSplit(TEST_SHARD_ID))));
 
-        RecordsWithSplitIds<Record> retrievedRecords = splitReader.fetch();
-        List<Record> records = new ArrayList<>(readAllRecords(retrievedRecords));
+        RecordsWithSplitIds<KinesisClientRecord> retrievedRecords = splitReader.fetch();
+        List<KinesisClientRecord> records = new ArrayList<>(readAllRecords(retrievedRecords));
 
         assertThat(sentRecords.size() > maxRecordsToGet).isTrue();
         assertThat(records.size()).isEqualTo(maxRecordsToGet);
     }
 
-    private List<Record> readAllRecords(RecordsWithSplitIds<Record> recordsWithSplitIds) {
-        List<Record> outputRecords = new ArrayList<>();
-        Record record;
+    private List<KinesisClientRecord> readAllRecords(
+            RecordsWithSplitIds<KinesisClientRecord> recordsWithSplitIds) {
+        List<KinesisClientRecord> outputRecords = new ArrayList<>();
+        KinesisClientRecord record;
         do {
             record = recordsWithSplitIds.nextRecordFromSplit();
             if (record != null) {

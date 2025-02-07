@@ -33,6 +33,14 @@ under the License.
     <name>Flink : Connectors : AWS : Amazon Kinesis Data Streams Connector v2</name>
     <packaging>jar</packaging>
 
+    <repositories>
+        <!-- used for the kinesis aggregator dependency since it is not available in maven central -->
+        <repository>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
+        </repository>
+    </repositories>
+
     <dependencies>
         <dependency>
             <groupId>org.apache.flink</groupId>
@@ -50,6 +58,11 @@ under the License.
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>kinesis</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>software.amazon.kinesis</groupId>
+            <artifactId>amazon-kinesis-client</artifactId>
         </dependency>
 
         <dependency>
@@ -99,6 +112,15 @@ under the License.
             <artifactId>flink-connector-aws-base</artifactId>
             <version>${project.version}</version>
             <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <!-- the kinesis aggregator dependency since it is not available in maven central -->
+            <!-- look into issue https://github.com/awslabs/kinesis-aggregation/issues/120 -->
+            <groupId>com.github.awslabs.kinesis-aggregation</groupId>
+            <artifactId>amazon-kinesis-aggregator</artifactId>
+            <version>2.0.3</version>
             <scope>test</scope>
         </dependency>
 

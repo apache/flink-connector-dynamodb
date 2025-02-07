@@ -26,7 +26,7 @@ import org.apache.flink.connector.kinesis.source.split.KinesisShardSplitState;
 import org.apache.flink.connector.kinesis.source.split.StartingPosition;
 import org.apache.flink.util.Collector;
 
-import software.amazon.awssdk.services.kinesis.model.Record;
+import software.amazon.kinesis.retrieval.KinesisClientRecord;
 
 /**
  * Emits record from the source into the Flink job graph. This serves as the interface between the
@@ -36,7 +36,7 @@ import software.amazon.awssdk.services.kinesis.model.Record;
  */
 @Internal
 public class KinesisStreamsRecordEmitter<T>
-        implements RecordEmitter<Record, T, KinesisShardSplitState> {
+        implements RecordEmitter<KinesisClientRecord, T, KinesisShardSplitState> {
 
     private final KinesisDeserializationSchema<T> deserializationSchema;
     private final SourceOutputWrapper<T> sourceOutputWrapper = new SourceOutputWrapper<>();
@@ -47,7 +47,7 @@ public class KinesisStreamsRecordEmitter<T>
 
     @Override
     public void emitRecord(
-            Record element, SourceOutput<T> output, KinesisShardSplitState splitState)
+            KinesisClientRecord element, SourceOutput<T> output, KinesisShardSplitState splitState)
             throws Exception {
         sourceOutputWrapper.setSourceOutput(output);
         sourceOutputWrapper.setTimestamp(element.approximateArrivalTimestamp().toEpochMilli());

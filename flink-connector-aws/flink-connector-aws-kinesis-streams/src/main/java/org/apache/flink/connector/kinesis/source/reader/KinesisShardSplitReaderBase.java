@@ -29,8 +29,8 @@ import org.apache.flink.connector.kinesis.source.split.StartingPosition;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import software.amazon.awssdk.services.kinesis.model.Record;
 import software.amazon.awssdk.services.kinesis.model.ResourceNotFoundException;
+import software.amazon.kinesis.retrieval.KinesisClientRecord;
 
 import javax.annotation.Nullable;
 
@@ -41,7 +41,6 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -50,10 +49,10 @@ import static java.util.Collections.singleton;
 /** Base implementation of the SplitReader for reading from KinesisShardSplits. */
 @Internal
 public abstract class KinesisShardSplitReaderBase
-        implements SplitReader<Record, KinesisShardSplit> {
+        implements SplitReader<KinesisClientRecord, KinesisShardSplit> {
 
     private static final Logger LOG = LoggerFactory.getLogger(KinesisShardSplitReaderBase.class);
-    private static final RecordsWithSplitIds<Record> INCOMPLETE_SHARD_EMPTY_RECORDS =
+    private static final RecordsWithSplitIds<KinesisClientRecord> INCOMPLETE_SHARD_EMPTY_RECORDS =
             new KinesisRecordsWithSplitIds(Collections.emptyIterator(), null, false);
 
     private final Deque<KinesisShardSplitState> assignedSplits = new ArrayDeque<>();
@@ -65,7 +64,7 @@ public abstract class KinesisShardSplitReaderBase
     }
 
     @Override
-    public RecordsWithSplitIds<Record> fetch() throws IOException {
+    public RecordsWithSplitIds<KinesisClientRecord> fetch() throws IOException {
         KinesisShardSplitState splitState = assignedSplits.poll();
 
         // When there are no assigned splits, return quickly
@@ -103,7 +102,7 @@ public abstract class KinesisShardSplitReaderBase
                 .get(splitState.getShardId())
                 .setMillisBehindLatest(recordBatch.getMillisBehindLatest());
 
-        if (recordBatch.getRecords().isEmpty()) {
+        if (recordBatch.getDeaggregatedRecords().isEmpty()) {
             if (recordBatch.isCompleted()) {
                 return new KinesisRecordsWithSplitIds(
                         Collections.emptyIterator(), splitState.getSplitId(), true);
@@ -115,12 +114,12 @@ public abstract class KinesisShardSplitReaderBase
         splitState.setNextStartingPosition(
                 StartingPosition.continueFromSequenceNumber(
                         recordBatch
-                                .getRecords()
-                                .get(recordBatch.getRecords().size() - 1)
+                                .getDeaggregatedRecords()
+                                .get(recordBatch.getDeaggregatedRecords().size() - 1)
                                 .sequenceNumber()));
 
         return new KinesisRecordsWithSplitIds(
-                recordBatch.getRecords().iterator(),
+                recordBatch.getDeaggregatedRecords().iterator(),
                 splitState.getSplitId(),
                 recordBatch.isCompleted());
     }
@@ -155,47 +154,19 @@ public abstract class KinesisShardSplitReaderBase
     }
 
     /**
-     * Dataclass to store a batch of Kinesis records with metadata. Used to pass Kinesis records
-     * from the SplitReader implementation to the SplitReaderBase.
-     */
-    @Internal
-    protected static class RecordBatch {
-        private final List<Record> records;
-        private final long millisBehindLatest;
-        private final boolean completed;
-
-        public RecordBatch(List<Record> records, long millisBehindLatest, boolean completed) {
-            this.records = records;
-            this.millisBehindLatest = millisBehindLatest;
-            this.completed = completed;
-        }
-
-        public List<Record> getRecords() {
-            return records;
-        }
-
-        public long getMillisBehindLatest() {
-            return millisBehindLatest;
-        }
-
-        public boolean isCompleted() {
-            return completed;
-        }
-    }
-
-    /**
      * Implementation of {@link RecordsWithSplitIds} for sending Kinesis records from fetcher to the
      * SourceReader.
      */
     @Internal
-    private static class KinesisRecordsWithSplitIds implements RecordsWithSplitIds<Record> {
+    private static class KinesisRecordsWithSplitIds
+            implements RecordsWithSplitIds<KinesisClientRecord> {
 
-        private final Iterator<Record> recordsIterator;
+        private final Iterator<KinesisClientRecord> recordsIterator;
         private final String splitId;
         private final boolean isComplete;
 
         public KinesisRecordsWithSplitIds(
-                Iterator<Record> recordsIterator, String splitId, boolean isComplete) {
+                Iterator<KinesisClientRecord> recordsIterator, String splitId, boolean isComplete) {
             this.recordsIterator = recordsIterator;
             this.splitId = splitId;
             this.isComplete = isComplete;
@@ -209,7 +180,7 @@ public abstract class KinesisShardSplitReaderBase
 
         @Nullable
         @Override
-        public Record nextRecordFromSplit() {
+        public KinesisClientRecord nextRecordFromSplit() {
             return recordsIterator.hasNext() ? recordsIterator.next() : null;
         }
 

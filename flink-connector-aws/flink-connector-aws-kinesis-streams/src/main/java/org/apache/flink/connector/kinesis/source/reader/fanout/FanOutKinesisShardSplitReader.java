@@ -23,6 +23,7 @@ import org.apache.flink.connector.base.source.reader.splitreader.SplitsChange;
 import org.apache.flink.connector.kinesis.source.metrics.KinesisShardMetrics;
 import org.apache.flink.connector.kinesis.source.proxy.AsyncStreamProxy;
 import org.apache.flink.connector.kinesis.source.reader.KinesisShardSplitReaderBase;
+import org.apache.flink.connector.kinesis.source.reader.RecordBatch;
 import org.apache.flink.connector.kinesis.source.split.KinesisShardSplit;
 import org.apache.flink.connector.kinesis.source.split.KinesisShardSplitState;
 
@@ -69,7 +70,11 @@ public class FanOutKinesisShardSplitReader extends KinesisShardSplitReaderBase {
         if (shardCompleted) {
             splitSubscriptions.remove(splitState.getShardId());
         }
-        return new RecordBatch(event.records(), event.millisBehindLatest(), shardCompleted);
+        return new RecordBatch(
+                event.records(),
+                splitState.getKinesisShardSplit(),
+                event.millisBehindLatest(),
+                shardCompleted);
     }
 
     @Override

@@ -27,17 +27,23 @@ import org.apache.flink.connector.kinesis.source.split.StartingPosition;
 import org.apache.flink.metrics.Gauge;
 import org.apache.flink.metrics.testutils.MetricListener;
 
+import com.amazonaws.kinesis.agg.AggRecord;
+import com.amazonaws.kinesis.agg.RecordAggregator;
 import software.amazon.awssdk.arns.Arn;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.services.kinesis.model.HashKeyRange;
 import software.amazon.awssdk.services.kinesis.model.Record;
 import software.amazon.awssdk.services.kinesis.model.Shard;
+import software.amazon.kinesis.retrieval.KinesisClientRecord;
 
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -157,6 +163,43 @@ public class TestUtil {
     public static Record getTestRecord(String data) {
         return Record.builder()
                 .data(SdkBytes.fromByteArray(STRING_SCHEMA.serialize(data)))
+                .approximateArrivalTimestamp(Instant.now())
+                .build();
+    }
+
+    public static Record convertToRecord(KinesisClientRecord record) {
+        return Record.builder()
+                .data(SdkBytes.fromByteBuffer(record.data()))
+                .approximateArrivalTimestamp(record.approximateArrivalTimestamp())
+                .build();
+    }
+
+    public static List<KinesisClientRecord> convertToKinesisClientRecord(List<Record> records) {
+        return records.stream().map(KinesisClientRecord::fromRecord).collect(Collectors.toList());
+    }
+
+    public static Record createAggregatedRecord(List<Record> records) {
+        KinesisClientRecord aggregatedRecord = createKinesisAggregatedRecord(records);
+        return convertToRecord(aggregatedRecord);
+    }
+
+    public static KinesisClientRecord createKinesisAggregatedRecord(List<Record> records) {
+        RecordAggregator recordAggregator = new RecordAggregator();
+
+        for (Record record : records) {
+            try {
+                recordAggregator.addUserRecord("key", record.data().asByteArray());
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to add record to aggregator", e);
+            }
+        }
+
+        AggRecord aggRecord = recordAggregator.clearAndGet();
+
+        return KinesisClientRecord.builder()
+                .data(ByteBuffer.wrap(aggRecord.toRecordBytes()))
+                .partitionKey(aggRecord.getPartitionKey())
+                .explicitHashKey(aggRecord.getExplicitHashKey())
                 .approximateArrivalTimestamp(Instant.now())
                 .build();
     }

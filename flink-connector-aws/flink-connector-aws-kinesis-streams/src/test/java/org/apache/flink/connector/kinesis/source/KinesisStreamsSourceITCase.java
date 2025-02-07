@@ -11,6 +11,8 @@ import org.apache.flink.connector.aws.util.AWSGeneralUtil;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.test.junit5.MiniClusterExtension;
 
+import com.amazonaws.kinesis.agg.AggRecord;
+import com.amazonaws.kinesis.agg.RecordAggregator;
 import com.google.common.collect.Lists;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterEach;
@@ -24,7 +26,6 @@ import org.slf4j.LoggerFactory;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
-import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.core.SdkSystemSetting;
 import software.amazon.awssdk.http.SdkHttpClient;
 import software.amazon.awssdk.regions.Region;
@@ -41,7 +42,6 @@ import software.amazon.awssdk.services.kinesis.model.UpdateShardCountRequest;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -118,12 +118,34 @@ public class KinesisStreamsSourceITCase {
     }
 
     @Test
+    void singleShardStreamWithAggregationIsConsumed() throws Exception {
+        new Scenario()
+                .localstackStreamName("single-shard-stream-aggregation")
+                .shardCount(1)
+                .aggregationFactor(10)
+                .withSourceConnectionStreamArn(
+                        "arn:aws:kinesis:ap-southeast-1:000000000000:stream/single-shard-stream-aggregation")
+                .runScenario();
+    }
+
+    @Test
     void multipleShardStreamIsConsumed() throws Exception {
         new Scenario()
                 .localstackStreamName("multiple-shard-stream")
                 .shardCount(4)
                 .withSourceConnectionStreamArn(
                         "arn:aws:kinesis:ap-southeast-1:000000000000:stream/multiple-shard-stream")
+                .runScenario();
+    }
+
+    @Test
+    void multipleShardStreamWithAggregationIsConsumed() throws Exception {
+        new Scenario()
+                .localstackStreamName("multiple-shard-stream-aggregation")
+                .shardCount(4)
+                .aggregationFactor(10)
+                .withSourceConnectionStreamArn(
+                        "arn:aws:kinesis:ap-southeast-1:000000000000:stream/multiple-shard-stream-aggregation")
                 .runScenario();
     }
 
@@ -135,6 +157,18 @@ public class KinesisStreamsSourceITCase {
                 .reshardStream(2)
                 .withSourceConnectionStreamArn(
                         "arn:aws:kinesis:ap-southeast-1:000000000000:stream/resharded-stream")
+                .runScenario();
+    }
+
+    @Test
+    void reshardedStreamWithAggregationIsConsumed() throws Exception {
+        new Scenario()
+                .localstackStreamName("resharded-stream-aggregation")
+                .shardCount(1)
+                .aggregationFactor(10)
+                .reshardStream(2)
+                .withSourceConnectionStreamArn(
+                        "arn:aws:kinesis:ap-southeast-1:000000000000:stream/resharded-stream-aggregation")
                 .runScenario();
     }
 
@@ -152,6 +186,7 @@ public class KinesisStreamsSourceITCase {
 
     private class Scenario {
         private final int expectedElements = 1000;
+        private int aggregationFactor = 1;
         private String localstackStreamName = null;
         private int shardCount = 1;
         private boolean shouldReshardStream = false;
@@ -203,6 +238,11 @@ public class KinesisStreamsSourceITCase {
             return this;
         }
 
+        public Scenario aggregationFactor(int aggregationFactor) {
+            this.aggregationFactor = aggregationFactor;
+            return this;
+        }
+
         private void prepareStream(String streamName) throws Exception {
             final RateLimiter rateLimiter =
                     RateLimiterBuilder.newBuilder()
@@ -242,13 +282,8 @@ public class KinesisStreamsSourceITCase {
 
             for (List<byte[]> partition : Lists.partition(messages, 500)) {
                 List<PutRecordsRequestEntry> entries =
-                        partition.stream()
-                                .map(
-                                        msg ->
-                                                PutRecordsRequestEntry.builder()
-                                                        .partitionKey(UUID.randomUUID().toString())
-                                                        .data(SdkBytes.fromByteArray(msg))
-                                                        .build())
+                        Lists.partition(partition, aggregationFactor).stream()
+                                .map(this::createAggregatePutRecordsRequestEntry)
                                 .collect(Collectors.toList());
                 PutRecordsRequest requests =
                         PutRecordsRequest.builder().streamName(streamName).records(entries).build();
@@ -257,6 +292,22 @@ public class KinesisStreamsSourceITCase {
                     LOG.debug("Added record: {}", result.sequenceNumber());
                 }
             }
+        }
+
+        private PutRecordsRequestEntry createAggregatePutRecordsRequestEntry(
+                List<byte[]> messages) {
+            RecordAggregator recordAggregator = new RecordAggregator();
+
+            for (byte[] message : messages) {
+                try {
+                    recordAggregator.addUserRecord("key", message);
+                } catch (Exception e) {
+                    throw new RuntimeException("Failed to add record to aggregator", e);
+                }
+            }
+
+            AggRecord aggRecord = recordAggregator.clearAndGet();
+            return aggRecord.toPutRecordsRequestEntry();
         }
 
         private void reshard(String streamName) {

@@ -29,10 +29,10 @@ import org.apache.flink.connector.kinesis.source.split.StartingPosition;
 import org.apache.flink.util.Collector;
 
 import org.junit.jupiter.api.Test;
-import software.amazon.awssdk.core.SdkBytes;
-import software.amazon.awssdk.services.kinesis.model.Record;
+import software.amazon.kinesis.retrieval.KinesisClientRecord;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -50,24 +50,18 @@ class KinesisStreamsRecordEmitterTest {
     @Test
     void testEmitRecord() throws Exception {
         final Instant startTime = Instant.now();
-        List<Record> inputRecords =
+        List<KinesisClientRecord> inputRecords =
                 Stream.of(
-                                Record.builder()
-                                        .data(
-                                                SdkBytes.fromByteArray(
-                                                        STRING_SCHEMA.serialize("data-1")))
+                                KinesisClientRecord.builder()
+                                        .data(ByteBuffer.wrap(STRING_SCHEMA.serialize("data-1")))
                                         .approximateArrivalTimestamp(startTime)
                                         .build(),
-                                Record.builder()
-                                        .data(
-                                                SdkBytes.fromByteArray(
-                                                        STRING_SCHEMA.serialize("data-2")))
+                                KinesisClientRecord.builder()
+                                        .data(ByteBuffer.wrap(STRING_SCHEMA.serialize("data-2")))
                                         .approximateArrivalTimestamp(startTime.plusSeconds(10))
                                         .build(),
-                                Record.builder()
-                                        .data(
-                                                SdkBytes.fromByteArray(
-                                                        STRING_SCHEMA.serialize("data-3")))
+                                KinesisClientRecord.builder()
+                                        .data(ByteBuffer.wrap(STRING_SCHEMA.serialize("data-3")))
                                         .approximateArrivalTimestamp(startTime.plusSeconds(20))
                                         .sequenceNumber("some-sequence-number")
                                         .build())
@@ -79,7 +73,7 @@ class KinesisStreamsRecordEmitterTest {
 
         KinesisStreamsRecordEmitter<String> emitter =
                 new KinesisStreamsRecordEmitter<>(KinesisDeserializationSchema.of(STRING_SCHEMA));
-        for (Record record : inputRecords) {
+        for (KinesisClientRecord record : inputRecords) {
             emitter.emitRecord(record, output, splitState);
         }
 
@@ -97,26 +91,20 @@ class KinesisStreamsRecordEmitterTest {
     @Test
     void testEmitRecordBasedOnSequenceNumber() throws Exception {
         final Instant startTime = Instant.now();
-        List<Record> inputRecords =
+        List<KinesisClientRecord> inputRecords =
                 Stream.of(
-                                Record.builder()
-                                        .data(
-                                                SdkBytes.fromByteArray(
-                                                        STRING_SCHEMA.serialize("data-1")))
+                                KinesisClientRecord.builder()
+                                        .data(ByteBuffer.wrap(STRING_SCHEMA.serialize("data-1")))
                                         .sequenceNumber("emit")
                                         .approximateArrivalTimestamp(startTime)
                                         .build(),
-                                Record.builder()
-                                        .data(
-                                                SdkBytes.fromByteArray(
-                                                        STRING_SCHEMA.serialize("data-2")))
+                                KinesisClientRecord.builder()
+                                        .data(ByteBuffer.wrap(STRING_SCHEMA.serialize("data-2")))
                                         .sequenceNumber("emit")
                                         .approximateArrivalTimestamp(startTime.plusSeconds(10))
                                         .build(),
-                                Record.builder()
-                                        .data(
-                                                SdkBytes.fromByteArray(
-                                                        STRING_SCHEMA.serialize("data-3")))
+                                KinesisClientRecord.builder()
+                                        .data(ByteBuffer.wrap(STRING_SCHEMA.serialize("data-3")))
                                         .approximateArrivalTimestamp(startTime.plusSeconds(20))
                                         .sequenceNumber("do-not-emit")
                                         .build())
@@ -126,7 +114,7 @@ class KinesisStreamsRecordEmitterTest {
 
         KinesisStreamsRecordEmitter<String> emitter =
                 new KinesisStreamsRecordEmitter<>(new SequenceNumberBasedDeserializationSchema());
-        for (Record record : inputRecords) {
+        for (KinesisClientRecord record : inputRecords) {
             emitter.emitRecord(record, output, splitState);
         }
 
@@ -139,24 +127,18 @@ class KinesisStreamsRecordEmitterTest {
     @Test
     void testEmitRecordWithMetadata() throws Exception {
         final Instant startTime = Instant.now();
-        List<Record> inputRecords =
+        List<KinesisClientRecord> inputRecords =
                 Stream.of(
-                                Record.builder()
-                                        .data(
-                                                SdkBytes.fromByteArray(
-                                                        STRING_SCHEMA.serialize("data-1")))
+                                KinesisClientRecord.builder()
+                                        .data(ByteBuffer.wrap(STRING_SCHEMA.serialize("data-1")))
                                         .approximateArrivalTimestamp(startTime)
                                         .build(),
-                                Record.builder()
-                                        .data(
-                                                SdkBytes.fromByteArray(
-                                                        STRING_SCHEMA.serialize("data-2")))
+                                KinesisClientRecord.builder()
+                                        .data(ByteBuffer.wrap(STRING_SCHEMA.serialize("data-2")))
                                         .approximateArrivalTimestamp(startTime.plusSeconds(10))
                                         .build(),
-                                Record.builder()
-                                        .data(
-                                                SdkBytes.fromByteArray(
-                                                        STRING_SCHEMA.serialize("data-3")))
+                                KinesisClientRecord.builder()
+                                        .data(ByteBuffer.wrap(STRING_SCHEMA.serialize("data-3")))
                                         .approximateArrivalTimestamp(startTime.plusSeconds(20))
                                         .sequenceNumber("some-sequence-number")
                                         .build())
@@ -168,7 +150,7 @@ class KinesisStreamsRecordEmitterTest {
                 new KinesisStreamsRecordEmitter<>(
                         new AssertRecordMetadataDeserializationSchema(
                                 splitState.getStreamArn(), splitState.getShardId()));
-        for (Record record : inputRecords) {
+        for (KinesisClientRecord record : inputRecords) {
             emitter.emitRecord(record, output, splitState);
         }
 
@@ -225,10 +207,13 @@ class KinesisStreamsRecordEmitterTest {
 
         @Override
         public void deserialize(
-                Record record, String stream, String shardId, Collector<String> output)
+                KinesisClientRecord record, String stream, String shardId, Collector<String> output)
                 throws IOException {
             if (Objects.equals(record.sequenceNumber(), "emit")) {
-                STRING_SCHEMA.deserialize(record.data().asByteArray(), output);
+                ByteBuffer recordData = record.data();
+                byte[] dataBytes = new byte[recordData.remaining()];
+                recordData.get(dataBytes);
+                STRING_SCHEMA.deserialize(dataBytes, output);
             }
         }
 
@@ -251,11 +236,15 @@ class KinesisStreamsRecordEmitterTest {
 
         @Override
         public void deserialize(
-                Record record, String stream, String shardId, Collector<String> output)
+                KinesisClientRecord record, String stream, String shardId, Collector<String> output)
                 throws IOException {
             assertThat(stream).isEqualTo(expectedStreamArn);
             assertThat(shardId).isEqualTo(expectedShardId);
-            STRING_SCHEMA.deserialize(record.data().asByteArray(), output);
+
+            ByteBuffer recordData = record.data();
+            byte[] dataBytes = new byte[recordData.remaining()];
+            recordData.get(dataBytes);
+            STRING_SCHEMA.deserialize(dataBytes, output);
         }
 
         @Override
