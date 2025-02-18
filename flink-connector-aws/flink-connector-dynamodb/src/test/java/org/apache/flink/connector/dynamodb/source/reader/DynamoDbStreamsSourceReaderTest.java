@@ -35,6 +35,7 @@ import org.apache.flink.runtime.operators.testutils.TestData;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +54,8 @@ class DynamoDbStreamsSourceReaderTest {
     private DynamoDbStreamsSourceReader<TestData> sourceReader;
     private MetricListener metricListener;
     private Map<String, DynamoDbStreamsShardMetrics> shardMetricGroupMap;
+    private static final Duration NON_EMPTY_POLLING_DELAY_MILLIS = Duration.ofMillis(250);
+    private static final Duration EMPTY_POLLING_DELAY_MILLIS = Duration.ofMillis(1000);
 
     @BeforeEach
     public void init() {
@@ -62,7 +65,10 @@ class DynamoDbStreamsSourceReaderTest {
         Supplier<PollingDynamoDbStreamsShardSplitReader> splitReaderSupplier =
                 () ->
                         new PollingDynamoDbStreamsShardSplitReader(
-                                testStreamProxy, shardMetricGroupMap);
+                                testStreamProxy,
+                                NON_EMPTY_POLLING_DELAY_MILLIS,
+                                EMPTY_POLLING_DELAY_MILLIS,
+                                shardMetricGroupMap);
 
         testingReaderContext =
                 DynamoDbStreamsContextProvider.DynamoDbStreamsTestingContext

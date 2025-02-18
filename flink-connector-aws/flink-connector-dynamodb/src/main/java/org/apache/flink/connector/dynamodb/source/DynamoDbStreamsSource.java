@@ -66,6 +66,8 @@ import java.util.function.Supplier;
 
 import static org.apache.flink.connector.dynamodb.source.config.DynamodbStreamsSourceConfigConstants.DYNAMODB_STREAMS_EXPONENTIAL_BACKOFF_MAX_DELAY;
 import static org.apache.flink.connector.dynamodb.source.config.DynamodbStreamsSourceConfigConstants.DYNAMODB_STREAMS_EXPONENTIAL_BACKOFF_MIN_DELAY;
+import static org.apache.flink.connector.dynamodb.source.config.DynamodbStreamsSourceConfigConstants.DYNAMODB_STREAMS_GET_RECORDS_IDLE_TIME_BETWEEN_EMPTY_POLLS;
+import static org.apache.flink.connector.dynamodb.source.config.DynamodbStreamsSourceConfigConstants.DYNAMODB_STREAMS_GET_RECORDS_IDLE_TIME_BETWEEN_NON_EMPTY_POLLS;
 import static org.apache.flink.connector.dynamodb.source.config.DynamodbStreamsSourceConfigConstants.DYNAMODB_STREAMS_RETRY_COUNT;
 
 /**
@@ -133,13 +135,20 @@ public class DynamoDbStreamsSource<T>
         setUpDeserializationSchema(readerContext);
 
         Map<String, DynamoDbStreamsShardMetrics> shardMetricGroupMap = new ConcurrentHashMap<>();
+        final Duration getRecordsIdlePollingTimeBetweenNonEmptyPolls =
+                sourceConfig.get(DYNAMODB_STREAMS_GET_RECORDS_IDLE_TIME_BETWEEN_NON_EMPTY_POLLS);
+        final Duration getRecordsIdlePollingTimeBetweenEmptyPolls =
+                sourceConfig.get(DYNAMODB_STREAMS_GET_RECORDS_IDLE_TIME_BETWEEN_EMPTY_POLLS);
 
         // We create a new stream proxy for each split reader since they have their own independent
         // lifecycle.
         Supplier<PollingDynamoDbStreamsShardSplitReader> splitReaderSupplier =
                 () ->
                         new PollingDynamoDbStreamsShardSplitReader(
-                                createDynamoDbStreamsProxy(sourceConfig), shardMetricGroupMap);
+                                createDynamoDbStreamsProxy(sourceConfig),
+                                getRecordsIdlePollingTimeBetweenNonEmptyPolls,
+                                getRecordsIdlePollingTimeBetweenEmptyPolls,
+                                shardMetricGroupMap);
         DynamoDbStreamsRecordEmitter<T> recordEmitter =
                 new DynamoDbStreamsRecordEmitter<>(deserializationSchema);
 

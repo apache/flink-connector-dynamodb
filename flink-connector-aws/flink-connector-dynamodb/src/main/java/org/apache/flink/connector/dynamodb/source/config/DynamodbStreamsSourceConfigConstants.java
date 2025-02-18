@@ -76,6 +76,23 @@ public class DynamodbStreamsSourceConfigConstants {
     public static final String BASE_DDB_STREAMS_USER_AGENT_PREFIX_FORMAT =
             "Apache Flink %s (%s) DynamoDb Streams Connector";
 
+    public static final ConfigOption<Duration>
+            DYNAMODB_STREAMS_GET_RECORDS_IDLE_TIME_BETWEEN_EMPTY_POLLS =
+                    ConfigOptions.key(
+                                    "flink.dynamodbstreams.getrecords.idle.time.between.empty.polls")
+                            .durationType()
+                            .defaultValue(Duration.ofMillis(1000))
+                            .withDescription(
+                                    "The idle time between empty polls for DynamoDB Streams GetRecords API");
+    public static final ConfigOption<Duration>
+            DYNAMODB_STREAMS_GET_RECORDS_IDLE_TIME_BETWEEN_NON_EMPTY_POLLS =
+                    ConfigOptions.key(
+                                    "flink.dynamodbstreams.getrecords.idle.time.between.nonempty.polls")
+                            .durationType()
+                            .defaultValue(Duration.ofMillis(250))
+                            .withDescription(
+                                    "The default idle time between non-empty polls for DynamoDB Streams GetRecords API");
+
     /** DynamoDb Streams identifier for user agent prefix. */
     public static final String DDB_STREAMS_CLIENT_USER_AGENT_PREFIX =
             "aws.dynamodbstreams.client.user-agent-prefix";
